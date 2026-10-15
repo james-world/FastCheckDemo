@@ -18,23 +18,23 @@ The state has two values:
 
 | Value   | Meaning                           | Range  |
 |---------|-----------------------------------|--------|
-| `small` | Gallons of water in the small jug | 0 to 3 |
-| `big`   | Gallons of water in the big jug   | 0 to 5 |
+| [`small`](src/jugs.js#L17) | Gallons of water in the small jug | 0 to 3 |
+| [`big`](src/jugs.js#L17)   | Gallons of water in the big jug   | 0 to 5 |
 
-At the start, both jugs are empty.
+At the start, both jugs are empty. See [`initialState`](src/jugs.js#L17).
 
 There are six actions. Each action changes the state.
 
 | Action       | What it does                                              |
 |--------------|-----------------------------------------------------------|
-| `FillSmall`  | Fill the small jug to the top.                            |
+| [`FillSmall`](src/jugs.js#L19)  | Fill the small jug to the top.                            |
 | `FillBig`    | Fill the big jug to the top.                              |
-| `EmptySmall` | Pour all water out of the small jug.                      |
+| [`EmptySmall`](src/jugs.js#L21) | Pour all water out of the small jug.                      |
 | `EmptyBig`   | Pour all water out of the big jug.                        |
-| `SmallToBig` | Pour water from the small jug into the big jug. Stop when the small jug is empty or the big jug is full. |
-| `BigToSmall` | Pour water from the big jug into the small jug. Stop when the big jug is empty or the small jug is full. |
+| [`SmallToBig`](src/jugs.js#L25) | Pour water from the small jug into the big jug. Stop when the small jug is empty or the big jug is full. |
+| [`BigToSmall`](src/jugs.js#L31) | Pour water from the big jug into the small jug. Stop when the big jug is empty or the small jug is full. |
 
-The file `src/jugs.js` contains the state and the six actions.
+The file [`src/jugs.js`](src/jugs.js) contains the state and the six actions. The capacities and the target are at the top of the file. See [`SMALL_CAPACITY`, `BIG_CAPACITY` and `TARGET`](src/jugs.js#L13-L15).
 
 ## 3. How fast-check finds the solution
 
@@ -44,16 +44,16 @@ To solve the puzzle with TLC, you give it this rule: "The big jug never holds 4 
 
 This demo uses the same method with `fast-check`:
 
-1. Each of the six actions becomes a `fast-check` command.
-2. `fast-check` makes random sequences of commands.
-3. `fast-check` runs each sequence from the initial state.
-4. After each command, the demo checks the rule "The big jug never holds 4 gallons."
+1. Each of the six actions becomes a `fast-check` command. See [`makeCommand`](test/dieHard.test.js#L31) and [`commands`](test/dieHard.test.js#L49).
+2. `fast-check` makes random sequences of commands. See [`fc.commands`](test/dieHard.test.js#L65).
+3. `fast-check` runs each sequence from the initial state. See [`fc.check`](test/dieHard.test.js#L64).
+4. After each command, the demo checks the rule "The big jug never holds 4 gallons." See [`notSolved`](src/jugs.js#L45) and [the check in `run`](test/dieHard.test.js#L42).
 5. When the rule is false, `fast-check` stops. It then makes the sequence shorter and shorter, until it cannot remove a command and keep the failure. This is called shrinking.
 6. The demo prints the shortest sequence. This is the solution.
 
-The demo also checks a second rule after each command: the jugs never hold more water than their capacity, and never a negative amount. In TLA+ this rule is called `TypeOK`. This rule must always be true. If it is not true, the model has an error.
+The demo also checks a second rule after each command: the jugs never hold more water than their capacity, and never a negative amount. In TLA+ this rule is called `TypeOK`. This rule must always be true. If it is not true, the model has an error. See [`typeOk`](src/jugs.js#L37) and [the check in `run`](test/dieHard.test.js#L38).
 
-The file `test/dieHard.test.js` contains the commands and the search.
+The file [`test/dieHard.test.js`](test/dieHard.test.js) contains the commands and the search.
 
 ## 4. How to run the demo
 
@@ -111,7 +111,7 @@ TLC always shows the shortest trace. `fast-check` shrinks the trace, but shrinki
 
 | File                    | Content                                      |
 |-------------------------|----------------------------------------------|
-| `src/jugs.js`           | The state, the six actions, and the rules    |
-| `test/dieHard.test.js`  | The `fast-check` commands and the search     |
-| `run-demo.sh`           | The launch script                            |
-| `package.json`          | The project definition and dependencies      |
+| [`src/jugs.js`](src/jugs.js)           | The state, the six actions, and the rules    |
+| [`test/dieHard.test.js`](test/dieHard.test.js)  | The `fast-check` commands and the search     |
+| [`run-demo.sh`](run-demo.sh)           | The launch script                            |
+| [`package.json`](package.json)          | The project definition and dependencies      |
