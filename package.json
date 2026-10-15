@@ -1,0 +1,13 @@
+{
+  "name": "fastcheck-die-hard-demo",
+  "version": "1.0.0",
+  "description": "Model the two-jug water puzzle (3 and 5 gallons, target 4) as a state machine and let fast-check find the solution.",
+  "type": "module",
+  "scripts": {
+    "demo": "node test/dieHard.test.js"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "fast-check": "^3.23.1"
+  }
+}
