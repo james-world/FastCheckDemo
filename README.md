@@ -65,13 +65,24 @@ Run this command from the project folder:
 ./run-demo.sh
 ```
 
-The script installs the dependencies on the first run. Then it runs the demo.
+The script installs the dependencies on the first run. Then it runs both demos: the two-jug puzzle, and the order workflow from section 7.
 
-You can also run the demo with npm:
+To run one demo only, give its name:
+
+```bash
+./run-demo.sh jugs
+```
+
+```bash
+./run-demo.sh order
+```
+
+You can also run the demos with npm:
 
 ```bash
 npm install
 npm run demo
+npm run demo:order
 ```
 
 ## 5. What the output shows
@@ -126,17 +137,17 @@ To test the code with `fast-check`:
 
 ### 7.2 A practical example: an order workflow
 
-An order service has these operations:
+The file [`src/orderService.js`](src/orderService.js) is a small order service. It is the "real code" in this example. It has these operations:
 
 | Operation     | What it does                                        |
 |---------------|-----------------------------------------------------|
-| `addItem`     | Add an item with a price to the order.              |
-| `removeItem`  | Remove an item from the order.                      |
-| `submit`      | Change the order from `draft` to `submitted`.       |
-| `pay`         | Change the order from `submitted` to `paid`.        |
-| `ship`        | Change the order from `paid` to `shipped`.          |
-| `cancel`      | Change the order to `cancelled`.                    |
-| `refund`      | Return money to the customer.                       |
+| [`addItem`](src/orderService.js#L23)     | Add an item with a price to the order.              |
+| [`removeItem`](src/orderService.js#L29)  | Remove an item from the order.                      |
+| [`submit`](src/orderService.js#L35)      | Change the order from `draft` to `submitted`.       |
+| [`pay`](src/orderService.js#L41)         | Change the order from `submitted` to `paid`.        |
+| [`ship`](src/orderService.js#L47)        | Change the order from `paid` to `shipped`.          |
+| [`cancel`](src/orderService.js#L52)      | Change the order to `cancelled`.                    |
+| [`refund`](src/orderService.js#L59)      | Return money to the customer.                       |
 
 These rules must always be true:
 
@@ -146,95 +157,69 @@ These rules must always be true:
 - The refunded amount is never more than the paid amount.
 - You cannot add or remove items after the order is submitted.
 
-This is a `fast-check` test for the service. The model holds only the state name, the items, and the money.
+The file [`test/orderWorkflow.test.js`](test/orderWorkflow.test.js) is the `fast-check` test for the service. It has three parts:
+
+1. [`checkRules`](test/orderWorkflow.test.js#L14) checks the rules. It compares the real service with the model. The model holds only the state name, the items, and the money.
+2. One command for each operation, from [`addItem`](test/orderWorkflow.test.js#L27) to [`refund`](test/orderWorkflow.test.js#L66). Each command has three parts:
+   - `check` tells `fast-check` when the operation is allowed in the current model state.
+   - `run` calls the real operation, updates the model, and calls `checkRules`.
+   - `toString` gives the name that `fast-check` prints in the trace.
+3. [`fc.check`](test/orderWorkflow.test.js#L102) runs the search. It is the same call as in the jug demo.
+
+This is the `refund` command. The customer can ask for any amount. The service must reject a bad amount. The command does not stop a bad amount. It lets the service decide, and then it checks the rules.
 
 ```js
-import fc from "fast-check";
-import { OrderService } from "../src/orderService.js";
-
-const sumPrices = (items) => items.reduce((t, i) => t + i.price, 0);
-
-// One command per public operation. Each command has three parts:
-//   check: when the command is allowed to run in the current model state
-//   run:   call the real code, update the model, check the rules
-//   toString: the name that fast-check prints in the trace
-const addItem = (price) => ({
-  check: (m) => m.state === "draft",
-  run: (m, real) => {
-    real.addItem({ price });
-    m.items.push({ price });
-    if (real.total() !== sumPrices(m.items)) throw new Error("total is wrong");
-  },
-  toString: () => `addItem(${price})`,
-});
-
-const submit = {
-  check: (m) => m.state === "draft" && m.items.length > 0,
-  run: (m, real) => { real.submit(); m.state = "submitted"; },
-  toString: () => "submit",
-};
-
-const pay = {
-  check: (m) => m.state === "submitted",
-  run: (m, real) => { real.pay(); m.state = "paid"; m.paid = sumPrices(m.items); },
-  toString: () => "pay",
-};
-
-const ship = {
-  check: (m) => m.state === "paid",
-  run: (m, real) => { real.ship(); m.state = "shipped"; },
-  toString: () => "ship",
-};
-
-const cancel = {
-  check: (m) => m.state !== "shipped" && m.state !== "cancelled",
-  run: (m, real) => { real.cancel(); m.state = "cancelled"; },
-  toString: () => "cancel",
-};
-
 const refund = (amount) => ({
+  // The customer may ask for any amount. The service must reject a bad one.
   check: (m) => m.state === "cancelled" && m.paid > 0,
   run: (m, real) => {
-    real.refund(amount);
-    m.refunded += amount;
-    if (real.refunded() > real.paid()) throw new Error("refunded more than paid");
+    try {
+      real.refund(amount);
+      m.refunded += amount;
+    } catch (e) {
+      // A rejected refund is fine. The rules below still apply.
+    }
+    checkRules(m, real);
   },
   toString: () => `refund(${amount})`,
 });
-
-const commands = [
-  fc.integer({ min: 1, max: 100 }).map(addItem),
-  fc.constant(submit),
-  fc.constant(pay),
-  fc.constant(ship),
-  fc.constant(cancel),
-  fc.integer({ min: 1, max: 200 }).map(refund),
-];
-
-fc.assert(
-  fc.property(fc.commands(commands), (cmds) => {
-    const setup = () => ({
-      model: { state: "draft", items: [], paid: 0, refunded: 0 },
-      real: new OrderService(),
-    });
-    fc.modelRun(setup, cmds);
-  }),
-);
 ```
 
-Note the difference from the jug puzzle. In the jug puzzle, every action is always allowed. Here, the `check` function of each command tells `fast-check` when the operation is allowed. `fast-check` does not run a command when its `check` returns false. This keeps the sequences valid. If you want to test that the real code rejects an operation, remove the `check` and assert that the real code throws an error.
+Note the difference from the jug puzzle. In the jug puzzle, every action is always allowed. Here, the `check` function of each command tells `fast-check` when the operation is allowed. `fast-check` does not run a command when its `check` returns false. This keeps the sequences valid.
 
-### 7.3 What the test can find
+### 7.3 What the test finds
 
-Think of a service where `refund` only checks that the amount is not more than the order total. It does not subtract the amount that was already refunded. `fast-check` finds a sequence like this:
+The service has a bug. [`refund`](src/orderService.js#L59) checks that the amount is not more than the order total. It does not subtract the amount that was already refunded. Two refunds can return more money than was paid.
+
+Run the test:
+
+```bash
+./run-demo.sh order
+```
+
+This is an example of the output:
 
 ```
-addItem(50), submit, pay, cancel, refund(50), refund(50)
+A rule is BROKEN. fast-check found and shrank a counterexample.
+
+Seed: -1604632105   Shrink steps: 5
+Reason: Error: refunded 71 but only paid 70
+
+Shortest sequence found:
+   0. Init           state=draft total=0 paid=0 refunded=0
+   1. addItem(70)    state=draft total=70 paid=0 refunded=0
+   2. submit         state=submitted total=70 paid=0 refunded=0
+   3. pay            state=paid total=70 paid=70 refunded=0
+   4. cancel         state=cancelled total=70 paid=70 refunded=0
+   5. refund(1)      state=cancelled total=70 paid=70 refunded=1
+   6. refund(70)     state=cancelled total=70 paid=70 refunded=71
 ```
 
-The second refund passes the check in the service, because 50 is not more than the total. The rule "the refunded amount is never more than the paid amount" fails. `fast-check` prints the sequence above. A person can then read the sequence and find the cause.
+The second refund passes the check in the service, because 70 is not more than the total. The rule "the refunded amount is never more than the paid amount" fails. `fast-check` prints the sequence. A person can then read the sequence and find the cause.
 
 A test that a person writes by hand usually tests one refund. It does not test two refunds after a cancel. `fast-check` tests thousands of sequences. It finds the sequences that a person does not write.
+
+To fix the bug, change the line marked `BUG` in [`src/orderService.js`](src/orderService.js#L62) so that it compares the amount with `paid - refunded`. Then run the test again. `fast-check` reports that it found no sequence that breaks a rule.
 
 ### 7.4 When to use this method
 
@@ -252,5 +237,7 @@ Do not use this method as the only test. Use it with your unit tests. The unit t
 |-------------------------|----------------------------------------------|
 | [`src/jugs.js`](src/jugs.js)           | The state, the six actions, and the rules    |
 | [`test/dieHard.test.js`](test/dieHard.test.js)  | The `fast-check` commands and the search     |
-| [`run-demo.sh`](run-demo.sh)           | The launch script                            |
+| [`src/orderService.js`](src/orderService.js)   | The order workflow, with a deliberate bug    |
+| [`test/orderWorkflow.test.js`](test/orderWorkflow.test.js) | The model-based test of the order workflow |
+| [`run-demo.sh`](run-demo.sh)           | The launch script for both demos             |
 | [`package.json`](package.json)          | The project definition and dependencies      |
