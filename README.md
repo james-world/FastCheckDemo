@@ -1,6 +1,38 @@
-# Two-Jug Puzzle With fast-check
+# Model-Based Testing With fast-check
 
-## 1. What this demo does
+This project shows how to test a state machine with the [`fast-check`](https://fast-check.dev) library for JavaScript. The method comes from TLA+: you write the actions and the rules, and a tool searches for a sequence of actions that breaks a rule. Here, `fast-check` is that tool.
+
+The project has two demos. Each demo is one command.
+
+| Demo | What it shows | Command | Code |
+|------|---------------|---------|------|
+| **1. The two-jug puzzle** | A puzzle from the TLA+ course. `fast-check` refutes the rule "the big jug never holds 4 gallons". The failing trace is the solution to the puzzle. | `./run-demo.sh jugs` | [`src/jugs.js`](src/jugs.js), [`test/dieHard.test.js`](test/dieHard.test.js) |
+| **2. The order workflow** | A small order service with a deliberate bug. `fast-check` drives the real API, checks the rules after each call, and finds the sequence that refunds more money than was paid. | `./run-demo.sh order` | [`src/orderService.js`](src/orderService.js), [`test/orderWorkflow.test.js`](test/orderWorkflow.test.js) |
+
+Start with demo 1 to learn the method. Then read demo 2 to see how to apply the method to your own code.
+
+To run both demos:
+
+```bash
+./run-demo.sh
+```
+
+## Contents
+
+- [1. What the two-jug demo does](#1-what-the-two-jug-demo-does)
+- [2. How the state machine works](#2-how-the-state-machine-works)
+- [3. How fast-check finds the solution](#3-how-fast-check-finds-the-solution)
+- [4. How to run the demos](#4-how-to-run-the-demos)
+- [5. What the output shows](#5-what-the-output-shows)
+- [6. Differences from TLC](#6-differences-from-tlc)
+- [7. How to use this method on real code](#7-how-to-use-this-method-on-real-code)
+  - [7.1 The idea](#71-the-idea)
+  - [7.2 A practical example: an order workflow](#72-a-practical-example-an-order-workflow)
+  - [7.3 What the test finds](#73-what-the-test-finds)
+  - [7.4 When to use this method](#74-when-to-use-this-method)
+- [8. Files](#8-files)
+
+## 1. What the two-jug demo does
 
 This demo shows how to use the `fast-check` library to find the solution to the two-jug puzzle.
 
@@ -55,7 +87,7 @@ The demo also checks a second rule after each command: the jugs never hold more 
 
 The file [`test/dieHard.test.js`](test/dieHard.test.js) contains the commands and the search.
 
-## 4. How to run the demo
+## 4. How to run the demos
 
 You need Node.js version 18 or later.
 
