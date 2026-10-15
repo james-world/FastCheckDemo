@@ -107,7 +107,146 @@ TLC always shows the shortest trace. `fast-check` shrinks the trace, but shrinki
 
 `fast-check` runs against real code. TLC runs against a specification. You can use `fast-check` to test that your code agrees with your model.
 
-## 7. Files
+## 7. How to use this method on real code
+
+The jug puzzle is small. The method is not. You can use the same method to test real code.
+
+### 7.1 The idea
+
+Most code has a state machine inside it. An order, a user session, a document, a payment. Each has a state. Each has a set of operations that change the state. Each has rules that must always be true.
+
+To test the code with `fast-check`:
+
+1. Write one command for each public operation of your code. The `run` function of the command calls the real operation.
+2. Keep a simple model next to the real code. The model is a plain object. It holds only the facts you need to check the rules.
+3. After each command, check the rules. Compare the real code with the model.
+4. Let `fast-check` make random sequences of commands.
+
+`fast-check` tries sequences that a person does not think to write. When a sequence breaks a rule, `fast-check` shrinks it. You get the shortest sequence that shows the problem. This is the same result that TLC gives for the jug puzzle.
+
+### 7.2 A practical example: an order workflow
+
+An order service has these operations:
+
+| Operation     | What it does                                        |
+|---------------|-----------------------------------------------------|
+| `addItem`     | Add an item with a price to the order.              |
+| `removeItem`  | Remove an item from the order.                      |
+| `submit`      | Change the order from `draft` to `submitted`.       |
+| `pay`         | Change the order from `submitted` to `paid`.        |
+| `ship`        | Change the order from `paid` to `shipped`.          |
+| `cancel`      | Change the order to `cancelled`.                    |
+| `refund`      | Return money to the customer.                       |
+
+These rules must always be true:
+
+- The total of the order is the sum of the item prices. It is never negative.
+- You cannot ship an order that is not paid.
+- You cannot cancel an order that is shipped.
+- The refunded amount is never more than the paid amount.
+- You cannot add or remove items after the order is submitted.
+
+This is a `fast-check` test for the service. The model holds only the state name, the items, and the money.
+
+```js
+import fc from "fast-check";
+import { OrderService } from "../src/orderService.js";
+
+const sumPrices = (items) => items.reduce((t, i) => t + i.price, 0);
+
+// One command per public operation. Each command has three parts:
+//   check: when the command is allowed to run in the current model state
+//   run:   call the real code, update the model, check the rules
+//   toString: the name that fast-check prints in the trace
+const addItem = (price) => ({
+  check: (m) => m.state === "draft",
+  run: (m, real) => {
+    real.addItem({ price });
+    m.items.push({ price });
+    if (real.total() !== sumPrices(m.items)) throw new Error("total is wrong");
+  },
+  toString: () => `addItem(${price})`,
+});
+
+const submit = {
+  check: (m) => m.state === "draft" && m.items.length > 0,
+  run: (m, real) => { real.submit(); m.state = "submitted"; },
+  toString: () => "submit",
+};
+
+const pay = {
+  check: (m) => m.state === "submitted",
+  run: (m, real) => { real.pay(); m.state = "paid"; m.paid = sumPrices(m.items); },
+  toString: () => "pay",
+};
+
+const ship = {
+  check: (m) => m.state === "paid",
+  run: (m, real) => { real.ship(); m.state = "shipped"; },
+  toString: () => "ship",
+};
+
+const cancel = {
+  check: (m) => m.state !== "shipped" && m.state !== "cancelled",
+  run: (m, real) => { real.cancel(); m.state = "cancelled"; },
+  toString: () => "cancel",
+};
+
+const refund = (amount) => ({
+  check: (m) => m.state === "cancelled" && m.paid > 0,
+  run: (m, real) => {
+    real.refund(amount);
+    m.refunded += amount;
+    if (real.refunded() > real.paid()) throw new Error("refunded more than paid");
+  },
+  toString: () => `refund(${amount})`,
+});
+
+const commands = [
+  fc.integer({ min: 1, max: 100 }).map(addItem),
+  fc.constant(submit),
+  fc.constant(pay),
+  fc.constant(ship),
+  fc.constant(cancel),
+  fc.integer({ min: 1, max: 200 }).map(refund),
+];
+
+fc.assert(
+  fc.property(fc.commands(commands), (cmds) => {
+    const setup = () => ({
+      model: { state: "draft", items: [], paid: 0, refunded: 0 },
+      real: new OrderService(),
+    });
+    fc.modelRun(setup, cmds);
+  }),
+);
+```
+
+Note the difference from the jug puzzle. In the jug puzzle, every action is always allowed. Here, the `check` function of each command tells `fast-check` when the operation is allowed. `fast-check` does not run a command when its `check` returns false. This keeps the sequences valid. If you want to test that the real code rejects an operation, remove the `check` and assert that the real code throws an error.
+
+### 7.3 What the test can find
+
+Think of a service where `refund` only checks that the amount is not more than the order total. It does not subtract the amount that was already refunded. `fast-check` finds a sequence like this:
+
+```
+addItem(50), submit, pay, cancel, refund(50), refund(50)
+```
+
+The second refund passes the check in the service, because 50 is not more than the total. The rule "the refunded amount is never more than the paid amount" fails. `fast-check` prints the sequence above. A person can then read the sequence and find the cause.
+
+A test that a person writes by hand usually tests one refund. It does not test two refunds after a cancel. `fast-check` tests thousands of sequences. It finds the sequences that a person does not write.
+
+### 7.4 When to use this method
+
+Use this method when:
+
+- Your code has state, and the order of operations is important.
+- You can write the rules that must always be true.
+- A simple model can tell you what the correct answer is.
+
+Do not use this method as the only test. Use it with your unit tests. The unit tests show that each operation does its job. The model-based test shows that the operations work together.
+
+## 8. Files
 
 | File                    | Content                                      |
 |-------------------------|----------------------------------------------|
